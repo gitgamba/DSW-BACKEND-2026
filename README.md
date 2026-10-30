@@ -50,7 +50,7 @@ npx prisma migrate deploy
 
 (Crear antes la carpeta `prisma/migrations/AAAAMMDDHHMMSS_nombre/` con la fecha y un nombre descriptivo.)
 
-> La base del free tier se pausa después de una hora sin uso; la primera conexión puede tardar hasta un minuto en despertarla (por eso `connectTimeout=90` en la `DATABASE_URL`).
+> La base del free tier se pausa después de una hora sin uso; la primera conexión puede tardar hasta un minuto en despertarla. Por eso usamos `connectTimeout=90;poolTimeout=90` en la `DATABASE_URL`: el primero da tiempo para abrir la conexión y el segundo para obtenerla del pool. Sin `poolTimeout`, Prisma espera solo 10 segundos y el primer login puede fallar con 500 aunque `connectTimeout` sea 90.
 
 ## Ejecución
 
@@ -173,7 +173,7 @@ Si un cambio trae una migración nueva, primero `migrate deploy` y después el p
 
    | Variable | Valor |
    |:-|:-|
-   | `DATABASE_URL` | La misma del `.env`, con `connectTimeout=90` |
+   | `DATABASE_URL` | La misma del `.env`, con `connectTimeout=90;poolTimeout=90` |
    | `CORS_ORIGIN` | La URL del front en Vercel, con `https://` y sin barra final (`https://nombre.vercel.app`). Mientras no exista, `http://localhost:5173`: es obligatoria y sin ella la API no arranca |
    | `STAYS_DOMAIN`, `STAYS_CLIENT_ID`, `STAYS_CLIENT_SECRET` | Las del `.env` |
 
