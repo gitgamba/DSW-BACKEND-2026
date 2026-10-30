@@ -1,0 +1,30 @@
+# Blueprint de Render: describe el servicio para no configurarlo a mano con clics.
+# Los secretos no van acá: sync: false declara que la variable existe y el valor
+# se carga en el panel de Render (el repo nunca ve los valores).
+services:
+  - type: web
+    name: dsw-backend-2026
+    runtime: node
+    plan: free
+    # La más cercana a la base (Azure SQL está en Brazil South): cada consulta cruza esa
+    # distancia. Render no tiene región en Sudamérica. Se fija al crear el servicio; después no se cambia.
+    region: virginia
+    # npm ci instala también las devDependencies (typescript y prisma hacen falta para compilar).
+    # build = prisma generate + tsc. Las migraciones NO corren acá: se aplican a mano (ver README).
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true # lo inventa Render: distinto al del .env de desarrollo
+      - key: CORS_ORIGIN
+        sync: false # la URL del front en Vercel, con https:// y sin barra final
+      - key: STAYS_DOMAIN
+        sync: false
+      - key: STAYS_CLIENT_ID
+        sync: false
+      - key: STAYS_CLIENT_SECRET
+        sync: false
+      # PORT no va: lo pone Render.

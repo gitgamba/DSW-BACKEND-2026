@@ -1,0 +1,103 @@
+// Modelo del TP (ver Modelo.png en el repo de la propuesta).
+// Notas para SQL Server:
+// - Prisma no soporta enums en SQL Server: los estados son strings y los valida Zod.
+// - Las fechas van como @db.Date y las horas como texto 'HH:mm' (@db.Char(5)), igual que en el modelo.
+// - SQL Server no acepta dos caminos de borrado en cascada hacia la misma tabla,
+//   por eso las relaciones con Usuario, TipoUsuario e Inmueble usan NoAction:
+//   no se puede borrar un registro que todavía tiene otros apuntándole.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model TipoUsuario {
+  id          Int       @id @default(autoincrement())
+  descripcion String    @unique @db.NVarChar(50)
+  usuarios    Usuario[]
+}
+
+model Usuario {
+  id            Int          @id @default(autoincrement())
+  nombre        String       @unique @db.NVarChar(50) // se usa para loguearse
+  passwordHash  String       @db.Char(60) // un hash de bcrypt mide 60 caracteres
+  tipoUsuarioId Int
+  tipoUsuario   TipoUsuario  @relation(fields: [tipoUsuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reservas      Reserva[] // las que creó
+  movimientos   Movimiento[] // los que tiene asignados
+}
+
+model Inmueble {
+  id        Int       @id @default(autoincrement())
+  staysId   String    @unique @db.NVarChar(50)
+  direccion String    @db.NVarChar(200)
+  precio    Decimal?  @db.Decimal(12, 2) // null: Stays no lo informa, se carga a mano
+  capacidad Int?
+  estado    String    @default("ACTIVO") @db.NVarChar(20) // ACTIVO | INACTIVO
+  reservas  Reserva[]
+}
+
+model Huesped {
+  id             Int       @id @default(autoincrement())
+  staysId        String    @unique @db.NVarChar(50)
+  apellido       String    @db.NVarChar(100)
+  nombres        String    @db.NVarChar(100)
+  dni            String?   @db.NVarChar(20) // texto: puede ser un pasaporte extranjero
+  nacionalidad   String?   @db.NVarChar(50)
+  confirmoInicio Boolean   @default(false)
+  confirmoFin    Boolean   @default(false)
+  telefono       String?   @db.NVarChar(30)
+  email          String?   @db.NVarChar(100)
+  reservas       Reserva[]
+}
+
+model Reserva {
+  id           Int          @id @default(autoincrement())
+  staysId      String       @unique @db.NVarChar(50)
+  fechaInicio  DateTime     @db.Date
+  horaInicio   String       @db.Char(5)
+  fechaFin     DateTime     @db.Date
+  horaFin      String       @db.Char(5)
+  titular      String       @db.NVarChar(100) // nombre tal como viene de Stays
+  costoEstadia Decimal?     @db.Decimal(12, 2) // lo que paga el huésped
+  moneda       String?      @db.Char(3) // de costoEstadia: código ISO (USD, ARS, BRL), como lo manda Stays
+  costo        Decimal?     @db.Decimal(12, 2) // costo operativo (por ejemplo la limpieza)
+  fechaCosto   DateTime?    @db.Date
+  inmuebleId   Int
+  inmueble     Inmueble     @relation(fields: [inmuebleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarioId    Int? // el creador; null si vino de Stays
+  usuario      Usuario?     @relation(fields: [usuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  huespedes    Huesped[]
+  movimientos  Movimiento[]
+}
+
+model Movimiento {
+  id             Int           @id @default(autoincrement())
+  tipo           String        @db.NVarChar(10) // CHECK_IN | CHECK_OUT
+  descripcion    String?       @db.NVarChar(500)
+  fechaRealizado DateTime?     @db.Date
+  horaRealizado  String?       @db.Char(5)
+  estado         String        @default("PENDIENTE") @db.NVarChar(20) // PENDIENTE | REALIZADO | CANCELADO
+  reservaId      Int
+  reserva        Reserva       @relation(fields: [reservaId], references: [id], onDelete: Cascade)
+  usuarioId      Int? // el asignado; null mientras no se asigne
+  usuario        Usuario?      @relation(fields: [usuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  notificacion   Notificacion?
+
+  // Una reserva tiene como mucho un check-in y un check-out (0..2 movimientos)
+  @@unique([reservaId, tipo])
+}
+
+model Notificacion {
+  id           Int        @id @default(autoincrement())
+  mensaje      String     @db.NVarChar(500)
+  fecha        DateTime   @db.Date
+  hora         String     @db.Char(5)
+  leida        Boolean    @default(false)
+  movimientoId Int        @unique // @unique: 0..1 notificación por movimiento
+  movimiento   Movimiento @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+}
