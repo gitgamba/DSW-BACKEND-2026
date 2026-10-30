@@ -15,8 +15,8 @@ import { errorHandler } from './shared/errorHandler.js';
 
 export const app = express();
 
-// En Render los requests llegan a través de un proxy: sin esto, req.ip sería
-// la IP del proxy y el límite de intentos del login sería uno solo para todos.
+// En Render los requests llegan a través de un proxy (guía 11): sin esto, req.ip sería
+// la IP del proxy y no la del cliente.
 // El 1 dice "confiá en un solo salto", así nadie puede inventarse la IP con X-Forwarded-For.
 app.set('trust proxy', 1);
 

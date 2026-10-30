@@ -99,14 +99,16 @@ npm test -- --verbose     # con el nombre de cada test
 npm test -- src/usuario   # solo los de una carpeta
 ```
 
+Son los que pide el TP: un test unitario por integrante y uno de integración.
+
 | Archivo | Tipo | Qué prueba |
 |:-|:-|:-|
-| `src/usuario/usuario.service.test.ts` | unitario | La regla de no quedarse sin administrador: no deja borrar ni cambiar de tipo al último Administrador, sí si hay otro, y verifica que en esos casos no se llama al `delete`/`update`. |
-| `src/movimiento/movimiento.service.test.ts` | unitario | Limpieza solo marca como realizado lo suyo: lo propio sí (con la hora de ahora o la que manda), lo ajeno o sin asignar no (`403`), lo cancelado tampoco (`409`) y el Administrador puede cualquiera. |
-| `src/app.test.ts` | integración | La app entera contra la base: login fallido, `401` y `403`, asignar un movimiento, que llegue la notificación, la agenda del operador, marcarlo realizado, y que la asignación sea una transacción (si falla a la mitad, no queda la notificación sin el movimiento asignado). |
+| `src/usuario/usuario.service.test.ts` | unitario | No deja borrar al único Administrador (`409`) y no llega a llamar al `delete`. |
+| `src/movimiento/movimiento.service.test.ts` | unitario | Limpieza no puede marcar como realizado un movimiento asignado a otro (`403`) y no llega a llamar al `update`. |
+| `src/app.test.ts` | integración | La app entera contra la base: el admin se loguea, da de alta un operador de Limpieza (que aparece en `GET /usuarios/operadores`, donde Limpieza recibe `403`), carga un inmueble y una reserva, le asigna el check-in y el operador recibe la notificación. |
 
-- **Unitarios:** no usan base de datos. Reemplazan `shared/prisma.ts` (y el reloj, `shared/fecha.ts`) por módulos falsos con `jest.unstable_mockModule`, como en el bloque 6 de la guía. Tardan milisegundos y no necesitan `.env`.
-- **Integración:** corre contra la base del `.env`, la misma de Azure. Crea sus propios datos (`PRUEBA-TEST-*` y los usuarios `prueba_limpieza_1/2`) y los borra al terminar. Si la base estaba pausada, la primera corrida puede tardar hasta un minuto.
+- **Unitarios:** no usan base de datos. Reemplazan `shared/prisma.ts` por un módulo falso con `jest.unstable_mockModule`, como en el bloque 6 de la guía. Tardan milisegundos y no necesitan `.env`.
+- **Integración:** corre contra la base del `.env`, la misma de Azure. Crea sus propios datos (`PRUEBA-TEST-*` y el usuario `prueba_limpieza`) y los borra al terminar. Si la base estaba pausada, la primera corrida puede tardar hasta un minuto.
 
 > El proyecto usa TypeScript 6 y no 7 porque ts-jest todavía no soporta TypeScript 7, que ya no trae la API de JavaScript que ts-jest necesita.
 
@@ -115,41 +117,18 @@ Salida esperada:
 ```
 PASS src/movimiento/movimiento.service.test.ts
   marcar un movimiento como realizado
-    √ deja a Limpieza marcar uno asignado a ella, con la fecha y hora de ahora
-    √ usa la fecha y hora que manda Limpieza si las manda
     √ no deja a Limpieza marcar uno asignado a otro
-    √ no deja a Limpieza marcar uno que no tiene a nadie asignado
-    √ deja a un Administrador marcar uno asignado a otro
-    √ no deja marcar uno cancelado, ni siquiera a su asignado
-    √ avisa que el movimiento no existe
 
 PASS src/usuario/usuario.service.test.ts
   eliminar un usuario
     √ no deja borrar al único Administrador
-    √ deja borrar a un Administrador si hay otro
-    √ deja borrar a alguien que no es Administrador sin contar administradores
-    √ avisa que el usuario no existe
-  cambiar el tipo de un usuario
-    √ no deja pasar al único Administrador a otro tipo
-    √ deja pasar a un Administrador a otro tipo si hay otro
-    √ deja al único Administrador cambiarse el nombre (no le cambia el tipo)
 
 PASS src/app.test.ts
-  autenticación
-    √ rechaza el login con contraseña incorrecta, sin decir qué falló
-    √ pide token para ver los movimientos
-    √ no deja a Limpieza asignar movimientos
-  asignar un movimiento y hacerlo
-    √ el admin asigna el check-in y el operador recibe la notificación
-    √ el operador ve el movimiento en su agenda, con la fecha y hora de la reserva
-    √ otro operador no puede marcarlo como realizado
-    √ su operador lo marca como realizado
-  transacción de la asignación
-    √ si algo falla a mitad de camino, no queda la notificación sin el movimiento asignado
-    √ sin la falla, la misma asignación guarda las dos cosas
+  asignar un movimiento
+    √ el admin asigna el check-in y el operador de Limpieza recibe la notificación
 
 Test Suites: 3 passed, 3 total
-Tests:       23 passed, 23 total
+Tests:       3 passed, 3 total
 ```
 
 ## Deploy (Render)
@@ -162,7 +141,7 @@ La API va en Render (plan free) y la base sigue en Azure SQL. Render no recibe `
 | Start | `npm start` (`node dist/src/server.js`) |
 | Healthcheck | `GET /api/health` |
 
-Lo que el código ya tiene para correr ahí: el puerto sale de `PORT` (lo pone Render), escucha en `0.0.0.0`, ante un `SIGTERM` cierra el servidor y después la conexión a la base, y `trust proxy` hace que el límite de intentos del login cuente la IP real de cada cliente y no la del proxy de Render.
+Lo que el código ya tiene para correr ahí: el puerto sale de `PORT` (lo pone Render), escucha en `0.0.0.0`, ante un `SIGTERM` cierra el servidor y después la conexión a la base, y `trust proxy` hace que `req.ip` sea la IP real de cada cliente y no la del proxy de Render.
 
 ### 1. Antes del push
 
@@ -261,8 +240,6 @@ Roles: `Administrador`, `Supervisor` y `Limpieza`. El rol se decide con la descr
 
 Tampoco deja borrar ni pasar a otro tipo al **último administrador** (`409`), porque nadie más podría dar de alta usuarios.
 
-El login admite **5 intentos fallidos por IP cada 15 minutos**; al sexto responde `429` hasta que pase la ventana. Los logins correctos no cuentan. El conteo vive en la memoria del proceso: se reinicia al reiniciar la API.
-
 ## Endpoints
 
 | Método | Ruta | Acceso | Body |
@@ -275,6 +252,7 @@ El login admite **5 intentos fallidos por IP cada 15 minutos**; al sexto respond
 | PUT | `/api/tipos-usuario/:id` | Administrador | `{ "descripcion": "..." }` |
 | DELETE | `/api/tipos-usuario/:id` | Administrador | |
 | GET | `/api/usuarios` | Administrador | |
+| GET | `/api/usuarios/operadores` | Administrador, Supervisor | `[{ id, nombre }]` de los usuarios de Limpieza y Supervisor (a quiénes se puede asignar un movimiento) |
 | GET | `/api/usuarios/:id` | Administrador | |
 | POST | `/api/usuarios` | Administrador | `{ "nombre": "juan", "password": "minimo8caracteres", "tipoUsuarioId": 3 }` |
 | PATCH | `/api/usuarios/:id` | Administrador | cualquiera de los campos del POST |
@@ -343,4 +321,4 @@ Fechas en formato `AAAA-MM-DD` y horas en `HH:mm`.
 
 La contraseña se guarda hasheada con bcrypt y nunca aparece en las respuestas.
 
-Códigos de respuesta: `400` para datos inválidos, `401` sin token, con token inválido o vencido, o con credenciales incorrectas, `403` si el rol no tiene permiso, `404` si no existe, `409` para un valor único repetido, un registro que tiene datos relacionados o un cambio que rompería los roles (tipos base, último administrador), `429` por demasiados intentos de login, y `500` para los errores inesperados.
+Códigos de respuesta: `400` para datos inválidos, `401` sin token, con token inválido o vencido, o con credenciales incorrectas, `403` si el rol no tiene permiso, `404` si no existe, `409` para un valor único repetido, un registro que tiene datos relacionados o un cambio que rompería los roles (tipos base, último administrador), y `500` para los errores inesperados.

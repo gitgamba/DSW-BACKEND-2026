@@ -5,7 +5,8 @@ import type { PayloadToken } from '../shared/jwt.js';
 import type { AgendaFiltros, Asignar, MovimientoCrear, MovimientoModificar, Realizado } from './movimiento.schema.js';
 
 // Decisión del usuario: los que pueden ir a hacer un check-in o un check-out
-const ROLES_ASIGNABLES = ['Limpieza', 'Supervisor'];
+// (también la usa GET /usuarios/operadores, para listar a quién se puede asignar)
+export const ROLES_ASIGNABLES = ['Limpieza', 'Supervisor'];
 
 // Lo que acompaña a cada movimiento en las respuestas
 const CON_RESERVA = { reserva: { include: { inmueble: true } }, usuario: true } as const;
@@ -75,23 +76,24 @@ export async function asignar(id: number, { usuarioId }: Asignar) {
   const que = movimiento.tipo === 'CHECK_IN' ? 'check-in' : 'check-out';
   const mensaje = `Te asignaron el ${que} del inmueble ${inmueble.id} (${inmueble.direccion}) el ${fechaLegible(fecha)} a las ${hora}`;
   const ahora = ahoraArgentina();
+  const datosNotificacion = { mensaje, fecha: new Date(ahora.fecha), hora: ahora.hora, leida: false };
 
-  return prisma.$transaction(async (tx) => {
-    if (usuarioId === null) {
-      // Sin operador no hay a quién avisarle
-      await tx.notificacion.deleteMany({ where: { movimientoId: id } });
-    } else {
-      // Hay como mucho una por movimiento: si ya existía (reasignación), se reescribe para
-      // el nuevo operador y vuelve a quedar sin leer. El dueño es el asignado del movimiento.
-      const datosNotificacion = { mensaje, fecha: new Date(ahora.fecha), hora: ahora.hora, leida: false };
-      await tx.notificacion.upsert({
-        where: { movimientoId: id },
-        create: { movimientoId: id, ...datosNotificacion },
-        update: datosNotificacion,
-      });
-    }
-    return tx.movimiento.update({ where: { id }, data: { usuarioId }, include: CON_RESERVA });
-  });
+  // Sin operador no hay a quién avisarle: se borra la notificación.
+  // Con operador: hay como mucho una por movimiento; si ya existía (reasignación), se reescribe
+  // para el nuevo operador y vuelve a quedar sin leer. El dueño es el asignado del movimiento.
+  const pasoNotificacion =
+    usuarioId === null
+      ? prisma.notificacion.deleteMany({ where: { movimientoId: id } })
+      : prisma.notificacion.upsert({
+          where: { movimientoId: id },
+          create: { movimientoId: id, ...datosNotificacion },
+          update: datosNotificacion,
+        });
+  const pasoMovimiento = prisma.movimiento.update({ where: { id }, data: { usuarioId }, include: CON_RESERVA });
+
+  // $transaction recibe la lista de operaciones y las corre juntas: si una falla, se deshacen todas
+  const resultados = await prisma.$transaction([pasoNotificacion, pasoMovimiento]);
+  return resultados[1]; // el movimiento ya actualizado
 }
 
 export async function marcarRealizado(id: number, datos: Realizado, quien: PayloadToken) {

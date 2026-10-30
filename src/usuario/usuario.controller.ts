@@ -8,6 +8,10 @@ export async function listar(req: Request, res: Response) {
   res.json(await service.listar());
 }
 
+export async function listarOperadores(req: Request, res: Response) {
+  res.json(await service.listarOperadores());
+}
+
 export async function obtener(req: Request, res: Response) {
   res.json(await service.obtener(idSchema.parse(req.params).id));
 }

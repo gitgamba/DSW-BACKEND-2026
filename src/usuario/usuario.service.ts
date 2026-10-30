@@ -2,11 +2,22 @@ import bcrypt from 'bcrypt';
 import { prisma } from '../shared/prisma.js';
 import { ConflictError, NotFoundError, ValidationError } from '../shared/errors.js';
 import type { UsuarioCrear, UsuarioModificar } from './usuario.schema.js';
+import { ROLES_ASIGNABLES } from '../movimiento/movimiento.service.js';
 
 // El passwordHash nunca viaja: el cliente de shared/prisma.ts lo omite siempre.
 
 export async function listar() {
   return prisma.usuario.findMany({ include: { tipoUsuario: true }, orderBy: { id: 'asc' } });
+}
+
+// Para el desplegable de asignar movimientos: solo id y nombre, así el Supervisor
+// puede usarlo sin ver el resto de los usuarios.
+export async function listarOperadores() {
+  return prisma.usuario.findMany({
+    where: { tipoUsuario: { descripcion: { in: ROLES_ASIGNABLES } } },
+    select: { id: true, nombre: true },
+    orderBy: { nombre: 'asc' },
+  });
 }
 
 export async function obtener(id: number) {
