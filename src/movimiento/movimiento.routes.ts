@@ -7,9 +7,9 @@ import { requiereRol } from '../shared/autorizar.js';
 
 export const movimientoRouter = Router();
 
-// Todos los roles entran; el service limita a Limpieza a sus propios movimientos.
+// Todos los roles entran; el service limita a Operador a sus propios movimientos.
 movimientoRouter.use(autenticar);
-const todos = requiereRol('Administrador', 'Supervisor', 'Limpieza');
+const todos = requiereRol('Administrador', 'Supervisor', 'Operador');
 const gestion = requiereRol('Administrador', 'Supervisor');
 
 // /agenda va antes que /:id: si no, Express tomaría "agenda" como un id

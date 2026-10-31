@@ -14,7 +14,7 @@ export async function listar() {
 // puede usarlo sin ver el resto de los usuarios.
 export async function listarOperadores() {
   return prisma.usuario.findMany({
-    where: { tipoUsuario: { descripcion: { in: ROLES_ASIGNABLES } } },
+    where: { tipoUsuario: { rolBase: { in: ROLES_ASIGNABLES } } },
     select: { id: true, nombre: true },
     orderBy: { nombre: 'asc' },
   });
@@ -44,7 +44,7 @@ export async function crear(datos: UsuarioCrear) {
 export async function modificar(id: number, datos: UsuarioModificar) {
   if (datos.tipoUsuarioId !== undefined) {
     const tipoNuevo = await verificarTipoUsuario(datos.tipoUsuarioId);
-    if (tipoNuevo.descripcion !== 'Administrador') {
+    if (tipoNuevo.rolBase !== 'Administrador') {
       await verificarQueNoEsUltimoAdmin(id); // pasarlo a otro tipo es como sacarlo de admin
     }
   }
@@ -71,10 +71,10 @@ export async function eliminar(id: number) {
 // serializable lo cierra si alguna vez hace falta.
 async function verificarQueNoEsUltimoAdmin(id: number) {
   const usuario = await obtener(id); // de paso, 404 si no existe
-  if (usuario.tipoUsuario.descripcion !== 'Administrador') {
+  if (usuario.tipoUsuario.rolBase !== 'Administrador') {
     return;
   }
-  const cantidadAdmins = await prisma.usuario.count({ where: { tipoUsuario: { descripcion: 'Administrador' } } });
+  const cantidadAdmins = await prisma.usuario.count({ where: { tipoUsuario: { rolBase: 'Administrador' } } });
   if (cantidadAdmins === 1) {
     throw new ConflictError('No se puede dejar el sistema sin administradores');
   }
