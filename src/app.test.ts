@@ -18,6 +18,7 @@ async function borrarDatosDePrueba() {
   await prisma.reserva.deleteMany({ where: { staysId: 'PRUEBA-TEST-RES' } }); // en cascada: movimientos y notificaciones
   await prisma.inmueble.deleteMany({ where: { staysId: 'PRUEBA-TEST-INM' } });
   await prisma.usuario.deleteMany({ where: { nombre: 'prueba_limpieza' } });
+  await prisma.tipoUsuario.deleteMany({ where: { descripcion: { in: ['PRUEBA-TEST-TIPO', 'PRUEBA-TEST-TIPO-RENOMBRADO'] } } });
 }
 
 beforeAll(borrarDatosDePrueba, UN_MINUTO_Y_MEDIO);
@@ -28,22 +29,30 @@ afterAll(async () => {
 }, UN_MINUTO_Y_MEDIO);
 
 describe('asignar un movimiento', () => {
-  it('el admin asigna el check-in y el operador de Limpieza recibe la notificación', async () => {
+  it('el admin asigna el check-in y el operador con rol Operador recibe la notificación', async () => {
     // 1. El admin se loguea
     const loginAdmin = await request(app)
       .post('/api/auth/login')
       .send({ nombre: process.env.SEED_ADMIN_NOMBRE, password: process.env.SEED_ADMIN_PASSWORD });
     const admin = `Bearer ${loginAdmin.body.token}`;
 
-    // 2. Da de alta un operador de Limpieza, que se loguea
-    const tipos = await request(app).get('/api/tipos-usuario').set('Authorization', admin);
-    const tipoLimpieza = tipos.body.find((t: { descripcion: string }) => t.descripcion === 'Limpieza');
+    // 2. Da de alta un operador con rol Operador, que se loguea
+    // El puesto NO se llama como un rol: los permisos deben venir de rolBase.
+    const tipoNuevo = await request(app).post('/api/tipos-usuario').set('Authorization', admin)
+      .send({ descripcion: 'PRUEBA-TEST-TIPO', rolBase: 'Operador' });
+    expect(tipoNuevo.status).toBe(201);
+    const tipoOperador = tipoNuevo.body;
     const operador = await request(app)
       .post('/api/usuarios')
       .set('Authorization', admin)
-      .send({ nombre: 'prueba_limpieza', password: 'Prueba-12345', tipoUsuarioId: tipoLimpieza.id });
+      .send({ nombre: 'prueba_limpieza', password: 'Prueba-12345', tipoUsuarioId: tipoOperador.id });
     const loginOperador = await request(app).post('/api/auth/login').send({ nombre: 'prueba_limpieza', password: 'Prueba-12345' });
 
+    expect(loginOperador.status).toBe(200);
+    expect(loginOperador.body.usuario.tipoUsuario.rolBase).toBe('Operador');
+    const renombrado = await request(app).put('/api/tipos-usuario/' + tipoOperador.id).set('Authorization', admin)
+      .send({ descripcion: 'PRUEBA-TEST-TIPO-RENOMBRADO', rolBase: 'Operador' });
+    expect(renombrado.status).toBe(200);
     // 3. Carga un inmueble y una reserva, que nace con su check-in y su check-out
     const inmueble = await request(app)
       .post('/api/inmuebles')
@@ -63,9 +72,9 @@ describe('asignar un movimiento', () => {
       });
     const checkIn = reserva.body.movimientos.find((m: { tipo: string }) => m.tipo === 'CHECK_IN');
 
-    // 4. El operador aparece en la lista de asignables (solo id y nombre), que Limpieza no puede pedir
+    // 4. El operador aparece en la lista de asignables (solo id y nombre), que Operador no puede pedir
     const operadores = await request(app).get('/api/usuarios/operadores').set('Authorization', admin);
-    const operadoresComoLimpieza = await request(app)
+    const operadoresComoOperador = await request(app)
       .get('/api/usuarios/operadores')
       .set('Authorization', `Bearer ${loginOperador.body.token}`);
 
@@ -82,7 +91,10 @@ describe('asignar un movimiento', () => {
 
     expect(operadores.body).toContainEqual({ id: operador.body.id, nombre: 'prueba_limpieza' });
     expect(operadores.body.some((u: { nombre: string }) => u.nombre === process.env.SEED_ADMIN_NOMBRE)).toBe(false);
-    expect(operadoresComoLimpieza.status).toBe(403);
+    expect(operadoresComoOperador.status).toBe(403);
+    const detalle = await request(app).get('/api/movimientos/' + checkIn.id).set('Authorization', 'Bearer ' + loginOperador.body.token);
+    expect(detalle.status).toBe(200);
+    expect(detalle.body.reserva.inmueble.id).toBe(inmueble.body.id);
     expect(asignado.status).toBe(200);
     expect(asignado.body.usuarioId).toBe(operador.body.id);
     expect(notificaciones.body).toHaveLength(1);

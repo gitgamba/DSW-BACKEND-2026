@@ -20,23 +20,21 @@ export async function crear(datos: TipoUsuarioInput) {
 }
 
 export async function modificar(id: number, datos: TipoUsuarioInput) {
-  await verificarQueNoEsBase(id);
+  const tipo = await obtener(id);
+  // Cambiar el rol del tipo cambia los permisos de TODOS sus usuarios.
+  if (tipo.rolBase === 'Administrador' && datos.rolBase !== 'Administrador') {
+    const afectados = await prisma.usuario.count({ where: { tipoUsuarioId: id } });
+    const otrosAdmins = await prisma.usuario.count({
+      where: { tipoUsuario: { rolBase: 'Administrador' }, tipoUsuarioId: { not: id } },
+    });
+    if (afectados > 0 && otrosAdmins === 0) {
+      throw new ConflictError('No se puede dejar el sistema sin administradores');
+    }
+  }
   return prisma.tipoUsuario.update({ where: { id }, data: datos });
 }
 
 // Si todavía hay usuarios de este tipo, la base lo impide (P2003) y se responde 409
 export async function eliminar(id: number) {
-  await verificarQueNoEsBase(id);
   await prisma.tipoUsuario.delete({ where: { id } });
-}
-
-// Los permisos se deciden por la descripción del tipo (es el "rol" del token):
-// si se renombra o borra uno de estos, sus usuarios pierden el acceso.
-const TIPOS_BASE = ['Administrador', 'Supervisor', 'Limpieza'];
-
-async function verificarQueNoEsBase(id: number) {
-  const tipo = await obtener(id); // de paso, 404 si no existe
-  if (TIPOS_BASE.includes(tipo.descripcion)) {
-    throw new ConflictError(`El tipo ${tipo.descripcion} es del sistema: no se puede modificar ni borrar`);
-  }
 }

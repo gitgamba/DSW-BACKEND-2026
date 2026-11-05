@@ -6,20 +6,20 @@ import type { AgendaFiltros, Asignar, MovimientoCrear, MovimientoModificar, Real
 
 // Decisión del usuario: los que pueden ir a hacer un check-in o un check-out
 // (también la usa GET /usuarios/operadores, para listar a quién se puede asignar)
-export const ROLES_ASIGNABLES = ['Limpieza', 'Supervisor'];
+export const ROLES_ASIGNABLES = ['Operador', 'Supervisor'];
 
 // Lo que acompaña a cada movimiento en las respuestas
 const CON_RESERVA = { reserva: { include: { inmueble: true } }, usuario: true } as const;
 
-// Limpieza solo ve y marca lo suyo; Administrador y Supervisor, todo.
+// Operador solo ve y marca lo suyo; Administrador y Supervisor, todo.
 // "quien" es el usuario del token (req.usuario), no algo que mande el cliente.
-function esLimpieza(quien: PayloadToken) {
-  return quien.rol === 'Limpieza';
+function esOperador(quien: PayloadToken) {
+  return quien.rol === 'Operador';
 }
 
 export async function listar(quien: PayloadToken) {
   return prisma.movimiento.findMany({
-    where: { usuarioId: esLimpieza(quien) ? Number(quien.sub) : undefined }, // undefined = sin filtro
+    where: { usuarioId: esOperador(quien) ? Number(quien.sub) : undefined }, // undefined = sin filtro
     include: CON_RESERVA,
     orderBy: { id: 'asc' },
   });
@@ -114,8 +114,8 @@ export async function marcarRealizado(id: number, datos: Realizado, quien: Paylo
 
 // La hoja de ruta: cada movimiento con la fecha y hora en que hay que ir, ordenada.
 export async function agenda(filtros: AgendaFiltros, quien: PayloadToken) {
-  // Limpieza siempre ve lo suyo, aunque pida otro usuarioId
-  const usuarioId = esLimpieza(quien) ? Number(quien.sub) : filtros.usuarioId;
+  // Operador siempre ve lo suyo, aunque pida otro usuarioId
+  const usuarioId = esOperador(quien) ? Number(quien.sub) : filtros.usuarioId;
   const rango = {
     gte: filtros.desde ? new Date(filtros.desde) : undefined,
     lte: filtros.hasta ? new Date(filtros.hasta) : undefined,
@@ -163,7 +163,7 @@ async function buscar(id: number) {
 }
 
 function verificarQueEsSuyo(usuarioId: number | null, quien: PayloadToken) {
-  if (esLimpieza(quien) && usuarioId !== Number(quien.sub)) {
+  if (esOperador(quien) && usuarioId !== Number(quien.sub)) {
     throw new ForbiddenError('Ese movimiento no está asignado a vos');
   }
 }
@@ -180,7 +180,7 @@ async function verificarQueEsAsignable(usuarioId: number) {
   if (!usuario) {
     throw new ValidationError(`No existe el usuario ${usuarioId}`);
   }
-  if (!ROLES_ASIGNABLES.includes(usuario.tipoUsuario.descripcion)) {
+  if (!ROLES_ASIGNABLES.includes(usuario.tipoUsuario.rolBase)) {
     throw new ValidationError(`Solo se puede asignar a usuarios de ${ROLES_ASIGNABLES.join(' o ')}`);
   }
 }

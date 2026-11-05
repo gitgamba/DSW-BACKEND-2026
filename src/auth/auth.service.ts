@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import { prisma } from '../shared/prisma.js';
 import { UnauthorizedError } from '../shared/errors.js';
-import { emitirToken } from '../shared/jwt.js';
+import { emitirToken, type Rol } from '../shared/jwt.js';
 import type { LoginInput } from './auth.schema.js';
 
 export async function login(datos: LoginInput) {
@@ -16,7 +16,7 @@ export async function login(datos: LoginInput) {
     throw new UnauthorizedError('Credenciales inválidas');
   }
 
-  const token = emitirToken({ sub: String(usuario.id), rol: usuario.tipoUsuario.descripcion });
+  const token = emitirToken({ sub: String(usuario.id), rol: usuario.tipoUsuario.rolBase as Rol });
   const { passwordHash, ...usuarioSinHash } = usuario; // el hash no sale nunca
   return { token, usuario: usuarioSinHash };
 }

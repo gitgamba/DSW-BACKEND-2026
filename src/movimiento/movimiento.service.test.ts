@@ -17,12 +17,13 @@ jest.unstable_mockModule('../shared/prisma.js', () => ({ prisma }));
 const service = await import('./movimiento.service.js');
 
 describe('marcar un movimiento como realizado', () => {
-  it('no deja a Limpieza marcar uno asignado a otro', async () => {
+  it('no deja a Operador marcar uno asignado a otro', async () => {
     // Un check-in asignado al usuario 7, y quien pide es el usuario 8 (sub es el id, como texto en el token)
     prisma.movimiento.findUnique.mockResolvedValue({ id: 50, tipo: 'CHECK_IN', estado: 'PENDIENTE', usuarioId: 7 });
-    const otraLimpieza = { sub: '8', rol: 'Limpieza' };
+    const otroOperador = { sub: '8', rol: 'Operador' as const };
 
-    await expect(service.marcarRealizado(50, {}, otraLimpieza)).rejects.toThrow(ForbiddenError);
+    await expect(service.obtener(50, otroOperador)).rejects.toThrow(ForbiddenError);
+    await expect(service.marcarRealizado(50, {}, otroOperador)).rejects.toThrow(ForbiddenError);
     expect(prisma.movimiento.update).not.toHaveBeenCalled(); // la mitad importante: no lo marcó
   });
 });

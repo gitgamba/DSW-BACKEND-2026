@@ -12,7 +12,9 @@ const prisma = {
     findUnique: jest.fn<FnPrisma>(),
     count: jest.fn<FnPrisma>(),
     delete: jest.fn<FnPrisma>(),
+    update: jest.fn<FnPrisma>(),
   },
+  tipoUsuario: { findUnique: jest.fn<FnPrisma>() },
 };
 jest.unstable_mockModule('../shared/prisma.js', () => ({ prisma }));
 
@@ -21,11 +23,14 @@ const service = await import('./usuario.service.js');
 
 describe('eliminar un usuario', () => {
   it('no deja borrar al único Administrador', async () => {
-    const ana = { id: 7, nombre: 'ana', tipoUsuarioId: 1, tipoUsuario: { id: 1, descripcion: 'Administrador' } };
+    const ana = { id: 7, nombre: 'ana', tipoUsuarioId: 1, tipoUsuario: { id: 1, descripcion: 'Dirección', rolBase: 'Administrador' } };
     prisma.usuario.findUnique.mockResolvedValue(ana);
     prisma.usuario.count.mockResolvedValue(1); // es el único
 
     await expect(service.eliminar(ana.id)).rejects.toThrow(ConflictError);
     expect(prisma.usuario.delete).not.toHaveBeenCalled(); // la mitad importante: no lo borró
+    prisma.tipoUsuario.findUnique.mockResolvedValue({ id: 2, descripcion: 'Recepción', rolBase: 'Operador' });
+    await expect(service.modificar(ana.id, { tipoUsuarioId: 2 })).rejects.toThrow(ConflictError);
+    expect(prisma.usuario.update).not.toHaveBeenCalled();
   });
 });

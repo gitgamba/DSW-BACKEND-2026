@@ -18,6 +18,7 @@ datasource db {
 model TipoUsuario {
   id          Int       @id @default(autoincrement())
   descripcion String    @unique @db.NVarChar(50)
+  rolBase     String    @db.NVarChar(20) // Administrador | Supervisor | Operador (lo valida Zod)
   usuarios    Usuario[]
 }
 

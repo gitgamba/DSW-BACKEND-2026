@@ -37,7 +37,7 @@ npx prisma migrate deploy
 npx prisma db seed
 ```
 
-El seed crea los tipos de usuario (Administrador, Supervisor y Limpieza) y el primer administrador. Se puede correr más de una vez: no duplica nada.
+El seed crea los puestos Administrador, Supervisor y Limpieza (roles base Administrador, Supervisor y Operador, respectivamente) y el primer administrador. Se puede correr más de una vez: no duplica nada.
 
 ### Cambios en el modelo
 
@@ -50,7 +50,7 @@ npx prisma migrate deploy
 
 (Crear antes la carpeta `prisma/migrations/AAAAMMDDHHMMSS_nombre/` con la fecha y un nombre descriptivo.)
 
-> La base del free tier se pausa después de una hora sin uso; la primera conexión puede tardar hasta un minuto en despertarla (por eso `connectTimeout=90` en la `DATABASE_URL`).
+> La base del free tier se pausa después de una hora sin uso; la primera conexión puede tardar hasta un minuto en despertarla. Por eso usamos `connectTimeout=90;poolTimeout=90` en la `DATABASE_URL`: el primero da tiempo para abrir la conexión y el segundo para obtenerla del pool. Sin `poolTimeout`, Prisma espera solo 10 segundos y el primer login puede fallar con 500 aunque `connectTimeout` sea 90.
 
 ## Ejecución
 
@@ -99,37 +99,22 @@ npm test -- --verbose     # con el nombre de cada test
 npm test -- src/usuario   # solo los de una carpeta
 ```
 
-Son los que pide el TP: un test unitario por integrante y uno de integración.
+Incluyen los dos unitarios originales y la integración del TP, más las reglas nuevas de roles y un seed idempotente.
 
 | Archivo | Tipo | Qué prueba |
 |:-|:-|:-|
-| `src/usuario/usuario.service.test.ts` | unitario | No deja borrar al único Administrador (`409`) y no llega a llamar al `delete`. |
-| `src/movimiento/movimiento.service.test.ts` | unitario | Limpieza no puede marcar como realizado un movimiento asignado a otro (`403`) y no llega a llamar al `update`. |
-| `src/app.test.ts` | integración | La app entera contra la base: el admin se loguea, da de alta un operador de Limpieza (que aparece en `GET /usuarios/operadores`, donde Limpieza recibe `403`), carga un inmueble y una reserva, le asigna el check-in y el operador recibe la notificación. |
+| `src/usuario/usuario.service.test.ts` | unitario | No deja borrar ni degradar al único administrador, aunque su puesto tenga otro nombre (`409`). |
+| `src/movimiento/movimiento.service.test.ts` | unitario | Operador no puede consultar ni realizar un movimiento ajeno (`403`). |
+| `src/tipo-usuario/tipo-usuario.service.test.ts` | unitario | Renombrar conserva permisos y cambiar el rol no puede dejar al sistema sin administradores. |
+| `src/seed.test.ts` | unitario | Ejecutar el seed dos veces con Prisma falso no duplica tipos ni cambia la contraseña existente. |
+| `src/app.test.ts` | integración | La app entera contra la base: el admin se loguea, da de alta un puesto con nombre distinto del rol y su operador (que aparece en `GET /usuarios/operadores`, donde Operador recibe `403`), carga un inmueble y una reserva, le asigna el check-in y el operador recibe la notificación. |
 
 - **Unitarios:** no usan base de datos. Reemplazan `shared/prisma.ts` por un módulo falso con `jest.unstable_mockModule`, como en el bloque 6 de la guía. Tardan milisegundos y no necesitan `.env`.
 - **Integración:** corre contra la base del `.env`, la misma de Azure. Crea sus propios datos (`PRUEBA-TEST-*` y el usuario `prueba_limpieza`) y los borra al terminar. Si la base estaba pausada, la primera corrida puede tardar hasta un minuto.
 
 > El proyecto usa TypeScript 6 y no 7 porque ts-jest todavía no soporta TypeScript 7, que ya no trae la API de JavaScript que ts-jest necesita.
 
-Salida esperada:
-
-```
-PASS src/movimiento/movimiento.service.test.ts
-  marcar un movimiento como realizado
-    √ no deja a Limpieza marcar uno asignado a otro
-
-PASS src/usuario/usuario.service.test.ts
-  eliminar un usuario
-    √ no deja borrar al único Administrador
-
-PASS src/app.test.ts
-  asignar un movimiento
-    √ el admin asigna el check-in y el operador de Limpieza recibe la notificación
-
-Test Suites: 3 passed, 3 total
-Tests:       3 passed, 3 total
-```
+Resultado real del 30/10/2026 con Node 24.22.2: **5 suites y 7 casos aprobados**, incluida la integración contra Azure SQL. Ver [evidencia central](https://github.com/gitgamba/DSW-303-2026/blob/main/docs/tests.md).
 
 ## Deploy (Render)
 
@@ -173,7 +158,7 @@ Si un cambio trae una migración nueva, primero `migrate deploy` y después el p
 
    | Variable | Valor |
    |:-|:-|
-   | `DATABASE_URL` | La misma del `.env`, con `connectTimeout=90` |
+   | `DATABASE_URL` | La misma del `.env`, con `connectTimeout=90;poolTimeout=90` |
    | `CORS_ORIGIN` | La URL del front en Vercel, con `https://` y sin barra final (`https://nombre.vercel.app`). Mientras no exista, `http://localhost:5173`: es obligatoria y sin ella la API no arranca |
    | `STAYS_DOMAIN`, `STAYS_CLIENT_ID`, `STAYS_CLIENT_SECRET` | Las del `.env` |
 
@@ -234,9 +219,9 @@ No hay registro público: el primer administrador sale del seed y es el que da d
    Authorization: Bearer eyJ...
    ```
 
-El token es un JWT firmado con `JWT_SECRET` que dura **8 horas**. Su payload es `{ sub: <id del usuario>, rol: <descripción del tipo> }`. Se puede leer sin el secret (no es secreto, es auténtico), por eso no lleva ningún dato privado. Como el servidor no guarda nada, un cambio de tipo o una baja recién se aplica cuando el token vence.
+El token es un JWT firmado con `JWT_SECRET` que dura **8 horas**. Su payload es `{ sub: <id del usuario>, rol: <rolBase del tipo> }`. Se puede leer sin el secret (no es secreto, es auténtico), por eso no lleva ningún dato privado. Los nuevos permisos se obtienen al volver a iniciar sesión; un token ya emitido conserva su rol hasta vencer (8 horas). Los tokens antiguos con rol Limpieza se rechazan.
 
-Roles: `Administrador`, `Supervisor` y `Limpieza`. El rol se decide con la descripción del tipo de usuario, por eso la API no deja renombrar ni borrar esos tres tipos (responde `409`).
+Roles base: `Administrador`, `Supervisor` y `Operador`. Se guardan en `TipoUsuario.rolBase`; la descripción del puesto es editable. No se puede borrar un tipo con usuarios ni cambiar su rol si deja al sistema sin administradores (409).
 
 Tampoco deja borrar ni pasar a otro tipo al **último administrador** (`409`), porque nadie más podría dar de alta usuarios.
 
@@ -248,11 +233,11 @@ Tampoco deja borrar ni pasar a otro tipo al **último administrador** (`409`), p
 | POST | `/api/auth/login` | pública | `{ "nombre": "admin", "password": "..." }` |
 | GET | `/api/tipos-usuario` | Administrador | |
 | GET | `/api/tipos-usuario/:id` | Administrador | |
-| POST | `/api/tipos-usuario` | Administrador | `{ "descripcion": "Supervisor" }` |
-| PUT | `/api/tipos-usuario/:id` | Administrador | `{ "descripcion": "..." }` |
+| POST | `/api/tipos-usuario` | Administrador | `{ "descripcion": "Recepción", "rolBase": "Operador" }` |
+| PUT | `/api/tipos-usuario/:id` | Administrador | `{ "descripcion": "Recepción", "rolBase": "Operador" }` |
 | DELETE | `/api/tipos-usuario/:id` | Administrador | |
 | GET | `/api/usuarios` | Administrador | |
-| GET | `/api/usuarios/operadores` | Administrador, Supervisor | `[{ id, nombre }]` de los usuarios de Limpieza y Supervisor (a quiénes se puede asignar un movimiento) |
+| GET | `/api/usuarios/operadores` | Administrador, Supervisor | `[{ id, nombre }]` de los usuarios de Operador y Supervisor (a quiénes se puede asignar un movimiento) |
 | GET | `/api/usuarios/:id` | Administrador | |
 | POST | `/api/usuarios` | Administrador | `{ "nombre": "juan", "password": "minimo8caracteres", "tipoUsuarioId": 3 }` |
 | PATCH | `/api/usuarios/:id` | Administrador | cualquiera de los campos del POST |
@@ -273,13 +258,13 @@ Tampoco deja borrar ni pasar a otro tipo al **último administrador** (`409`), p
 | PATCH | `/api/reservas/:id` | Administrador | cualquiera de los campos del POST (`huespedIds` reemplaza la lista) |
 | DELETE | `/api/reservas/:id` | Administrador | borra también sus movimientos |
 | POST | `/api/reservas/sincronizar?desde&hasta` | Administrador | trae las reservas de Stays, ver abajo |
-| GET | `/api/movimientos` | todos (Limpieza: solo los suyos) | |
-| GET | `/api/movimientos/:id` | todos (Limpieza: solo los suyos) | |
-| GET | `/api/movimientos/agenda?desde&hasta&usuarioId` | todos (Limpieza: solo los suyos) | ver abajo |
+| GET | `/api/movimientos` | todos (Operador: solo los suyos) | |
+| GET | `/api/movimientos/:id` | todos (Operador: solo los suyos) | |
+| GET | `/api/movimientos/agenda?desde&hasta&usuarioId` | todos (Operador: solo los suyos) | ver abajo |
 | POST | `/api/movimientos` | Administrador, Supervisor | `{ "reservaId": 1, "tipo": "CHECK_IN", "descripcion": "..." }` |
 | PATCH | `/api/movimientos/:id` | Administrador, Supervisor | `{ "descripcion", "estado": "PENDIENTE" \| "CANCELADO" }` |
 | PATCH | `/api/movimientos/:id/asignar` | Administrador, Supervisor | `{ "usuarioId": 3 }` (`null` lo desasigna) |
-| PATCH | `/api/movimientos/:id/realizado` | todos (Limpieza: solo los suyos) | `{ "fechaRealizado": "2026-11-10", "horaRealizado": "15:20" }` (opcionales: por defecto, ahora) |
+| PATCH | `/api/movimientos/:id/realizado` | todos (Operador: solo los suyos) | `{ "fechaRealizado": "2026-11-10", "horaRealizado": "15:20" }` (opcionales: por defecto, ahora) |
 | DELETE | `/api/movimientos/:id` | Administrador, Supervisor | |
 | GET | `/api/notificaciones/mias?noLeidas=true` | cualquier usuario logueado | |
 | PATCH | `/api/notificaciones/:id/leida` | el dueño | |
@@ -308,11 +293,11 @@ Fechas en formato `AAAA-MM-DD` y horas en `HH:mm`.
 ### Movimientos y agenda
 
 - Cada reserva tiene como mucho un `CHECK_IN` y un `CHECK_OUT` (crear uno repetido responde `409`).
-- Se asignan a usuarios de **Limpieza o Supervisor** (otro rol: `400`).
-- Limpieza solo ve sus movimientos y solo puede marcarlos `REALIZADO` (uno ajeno: `403`). Si no manda fecha y hora, se guarda la de ese momento (hora de Argentina).
+- Se asignan a usuarios de **Operador o Supervisor** (otro rol: `400`).
+- Operador solo ve sus movimientos y solo puede marcarlos `REALIZADO` (uno ajeno: `403`). Si no manda fecha y hora, se guarda la de ese momento (hora de Argentina).
 - `REALIZADO` solo se marca con `/realizado`. Volver a `PENDIENTE` borra la fecha y hora de realizado.
 - Un movimiento `CANCELADO` queda congelado: editarlo, asignarlo o marcarlo responde `409`.
-- La **agenda** devuelve una fila por movimiento: `{ id, tipo, estado, fecha, hora, titular, reservaId, inmueble: { id, direccion }, usuario, descripcion }`, ordenada por fecha y hora. La fecha y hora salen de la reserva: el inicio para el check-in y el fin para el check-out. Para FullCalendar, `start` es `fecha + "T" + hora`. Limpieza siempre recibe solo lo suyo, aunque mande otro `usuarioId`.
+- La **agenda** devuelve una fila por movimiento: `{ id, tipo, estado, fecha, hora, titular, reservaId, inmueble: { id, direccion }, usuario, descripcion }`, ordenada por fecha y hora. La fecha y hora salen de la reserva: el inicio para el check-in y el fin para el check-out. Para FullCalendar, `start` es `fecha + "T" + hora`. Operador siempre recibe solo lo suyo, aunque mande otro `usuarioId`.
 
 ### Notificaciones
 
@@ -321,4 +306,17 @@ Fechas en formato `AAAA-MM-DD` y horas en `HH:mm`.
 
 La contraseña se guarda hasheada con bcrypt y nunca aparece en las respuestas.
 
-Códigos de respuesta: `400` para datos inválidos, `401` sin token, con token inválido o vencido, o con credenciales incorrectas, `403` si el rol no tiene permiso, `404` si no existe, `409` para un valor único repetido, un registro que tiene datos relacionados o un cambio que rompería los roles (tipos base, último administrador), y `500` para los errores inesperados.
+Códigos de respuesta: `400` para datos inválidos, `401` sin token, con token inválido o vencido, o con credenciales incorrectas, `403` si el rol no tiene permiso, `404` si no existe, `409` para un valor único repetido, un registro que tiene datos relacionados o un cambio que dejaría al sistema sin administradores, y `500` para los errores inesperados.
+
+## Actualización local: roles base y entrega
+
+Los cambios de esta sección están preparados localmente. Consultar el estado del deploy antes de asumir que están publicados.
+
+- El nombre del puesto y su permiso son independientes. Ejemplo: tipo Limpieza con rolBase Operador.
+- Todos los tipos se pueden editar. Cambiar el rol afecta a sus usuarios al volver a iniciar sesión; los JWT siguen durando 8 horas.
+- Antes de aplicar la migración de rolBase, ejecutar `node scripts/verificar-tipos-antes-de-migrar.mjs` y revisar el SQL. Si hay tipos desconocidos, acordar su mapeo; no asignarles permisos por defecto.
+- Aplicar con `npx prisma migrate deploy`, nunca migrate dev en Azure. La migración conserva IDs, puestos, usuarios y relaciones.
+- La protección del último administrador también controla cambios de rol de todo un tipo.
+- Tests: `npm test -- --runInBand`; solo unitarios: `npm test -- --runInBand --testPathPatterns=service.test`. La integración escribe y limpia únicamente sus fixtures PRUEBA-TEST y prueba_limpieza.
+- No se ejecuta nuevamente el seed en producción por este cambio. En instalaciones nuevas crea Administrador, Supervisor y Limpieza con sus roles correspondientes; no pisa contraseñas existentes.
+- [Documentación de este repositorio](docs/README.md) y [documentación central](https://github.com/gitgamba/DSW-303-2026/tree/main/docs). La versión local central está en el repo hermano DSW-303-2026.

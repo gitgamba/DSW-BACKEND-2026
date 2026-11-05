@@ -17,11 +17,15 @@ if (!passwordAdmin || passwordAdmin.length < 8) {
   process.exit(1);
 }
 
-for (const descripcion of ['Administrador', 'Supervisor', 'Limpieza']) {
+for (const tipo of [
+  { descripcion: 'Administrador', rolBase: 'Administrador' },
+  { descripcion: 'Supervisor', rolBase: 'Supervisor' },
+  { descripcion: 'Limpieza', rolBase: 'Operador' },
+]) {
   await prisma.tipoUsuario.upsert({
-    where: { descripcion },
+    where: { descripcion: tipo.descripcion },
     update: {},
-    create: { descripcion },
+    create: tipo,
   });
 }
 
