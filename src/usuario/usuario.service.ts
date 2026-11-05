@@ -67,7 +67,7 @@ export async function eliminar(id: number) {
 }
 
 // Solo un Administrador puede dar de alta usuarios: si se va el último, nadie más puede entrar a gestionar.
-// ponytail: dos pedidos simultáneos sobre los dos últimos admins podrían pasar los dos; una transacción
+// Limitación conocida: dos pedidos simultáneos sobre los dos últimos admins podrían pasar los dos; una transacción
 // serializable lo cierra si alguna vez hace falta.
 async function verificarQueNoEsUltimoAdmin(id: number) {
   const usuario = await obtener(id); // de paso, 404 si no existe
