@@ -116,6 +116,8 @@ export async function marcarRealizado(id: number, datos: Realizado, quien: Paylo
 export async function agenda(filtros: AgendaFiltros, quien: PayloadToken) {
   // Operador siempre ve lo suyo, aunque pida otro usuarioId
   const usuarioId = esOperador(quien) ? Number(quien.sub) : filtros.usuarioId;
+  // Para repartir el trabajo: a un Operador no le aplica
+  const soloSinAsignar = filtros.sinAsignar && !esOperador(quien);
   const rango = {
     gte: filtros.desde ? new Date(filtros.desde) : undefined,
     lte: filtros.hasta ? new Date(filtros.hasta) : undefined,
@@ -123,7 +125,8 @@ export async function agenda(filtros: AgendaFiltros, quien: PayloadToken) {
 
   const movimientos = await prisma.movimiento.findMany({
     where: {
-      usuarioId,
+      usuarioId: soloSinAsignar ? null : usuarioId,
+      estado: soloSinAsignar ? 'PENDIENTE' : undefined,
       // La fecha del check-in es el inicio de la reserva; la del check-out, el fin
       OR: [
         { tipo: 'CHECK_IN', reserva: { fechaInicio: rango } },
