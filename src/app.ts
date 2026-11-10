@@ -29,7 +29,7 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'], // sin Authorization falla el preflight con token
   }),
 );
-app.use(express.json());
+app.use(express.json()); //Convierte el texto del body en JSON y lo pone en req.body
 
 // Healthcheck: Render le pega seguido para saber si el proceso está vivo.
 // No toca la base (si tarda, Render reinicia la API sin motivo), no pide token
