@@ -6,6 +6,11 @@ Usa Node.js, Express 5, TypeScript, Zod, Prisma 6 y SQL Server (Azure SQL).
 
 [Documentación](docs/README.md) · [Preparar otra PC y ejecutar las pruebas](docs/desarrollo-y-pruebas.md) · [Despliegue en Render](#deploy-render)
 
+## Enlaces de entrega
+
+- [Video de muestra](https://drive.google.com/file/d/1mR5La6TuBtTh3pgdFKk5MSmzHmg5TrIQ/view?usp=sharing).
+- [Aplicación publicada](https://dsw-frontend-2026.vercel.app/login).
+
 ## Requisitos
 
 - Node.js 24 (fijado en `engines` del `package.json`: Render usa esa misma versión)
