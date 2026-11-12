@@ -32,6 +32,8 @@ export const agendaSchema = z.object({
   desde: fechaSchema.optional(),
   hasta: fechaSchema.optional(),
   usuarioId: z.coerce.number().int().positive().optional(),
+  // Solo 'true': con coerce.boolean, el texto "false" daría true
+  sinAsignar: z.literal('true').optional(),
 });
 
 export type MovimientoCrear = z.infer<typeof movimientoCrearSchema>;

@@ -2,13 +2,13 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 
-export type Rol = 'Administrador' | 'Supervisor' | 'Limpieza';
+export type Rol = 'Administrador' | 'Supervisor' | 'Operador';
 
 // El payload se puede leer sin el secret (base64 no es encriptación):
 // solo lleva datos que el usuario ya sabe de sí mismo, nunca la contraseña ni el hash.
 const payloadSchema = z.object({
   sub: z.string(), // id del usuario (JWT lo define como string)
-  rol: z.string(), // la descripción de su TipoUsuario
+  rol: z.enum(['Administrador', 'Supervisor', 'Operador']), // independiente del nombre del puesto
 });
 
 export type PayloadToken = z.infer<typeof payloadSchema>;

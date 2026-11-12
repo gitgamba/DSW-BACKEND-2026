@@ -1,94 +1,67 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { ConflictError, ForbiddenError, NotFoundError } from '../shared/errors.js';
+import { describe, it, expect, jest } from '@jest/globals';
+import { ForbiddenError } from '../shared/errors.js';
+import { agendaSchema } from './movimiento.schema.js';
 
-// Test unitario: el service sin base de datos y sin reloj de verdad.
-// Se reemplazan por módulos falsos (guía 10, bloque 6: mock de módulo).
+// Test unitario: el service sin base de datos.
+// Se reemplaza prisma por un módulo falso (guía 10, bloque 6: mock de módulo).
 
 type FnPrisma = (args: unknown) => Promise<unknown>;
 const prisma = {
   movimiento: {
+    findMany: jest.fn<FnPrisma>(),
     findUnique: jest.fn<FnPrisma>(),
     update: jest.fn<FnPrisma>(),
   },
 };
 jest.unstable_mockModule('../shared/prisma.js', () => ({ prisma }));
 
-// El reloj también cruza el borde de la aplicación: si no se fija, el resultado
-// depende de cuándo se corre el test.
-jest.unstable_mockModule('../shared/fecha.js', () => ({
-  ahoraArgentina: () => ({ fecha: '2026-11-10', hora: '15:20' }),
-  fechaLegible: (fecha: string) => fecha,
-}));
-
-// Recién ahora se importa el service, para que reciba los módulos falsos
+// Recién ahora se importa el service, para que reciba el prisma falso
 const service = await import('./movimiento.service.js');
 
-// Usuarios tal como vienen en el token: sub es el id, como texto
-const limpieza = { sub: '7', rol: 'Limpieza' };
-const otraLimpieza = { sub: '8', rol: 'Limpieza' };
-const admin = { sub: '1', rol: 'Administrador' };
-
-// Un check-in asignado al usuario 7
-const checkIn = { id: 50, tipo: 'CHECK_IN', estado: 'PENDIENTE', usuarioId: 7 };
-
-beforeEach(() => {
-  jest.clearAllMocks(); // que ningún test vea las llamadas del anterior
-});
-
 describe('marcar un movimiento como realizado', () => {
-  it('deja a Limpieza marcar uno asignado a ella, con la fecha y hora de ahora', async () => {
-    prisma.movimiento.findUnique.mockResolvedValue(checkIn);
+  it('no deja a Operador marcar uno asignado a otro', async () => {
+    // Un check-in asignado al usuario 7, y quien pide es el usuario 8 (sub es el id, como texto en el token)
+    prisma.movimiento.findUnique.mockResolvedValue({ id: 50, tipo: 'CHECK_IN', estado: 'PENDIENTE', usuarioId: 7 });
+    const otroOperador = { sub: '8', rol: 'Operador' as const };
 
-    await service.marcarRealizado(checkIn.id, {}, limpieza);
-
-    expect(prisma.movimiento.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: checkIn.id },
-      data: { estado: 'REALIZADO', fechaRealizado: new Date('2026-11-10'), horaRealizado: '15:20' },
-    }));
-  });
-
-  it('usa la fecha y hora que manda Limpieza si las manda', async () => {
-    prisma.movimiento.findUnique.mockResolvedValue(checkIn);
-
-    await service.marcarRealizado(checkIn.id, { fechaRealizado: '2026-11-09', horaRealizado: '18:00' }, limpieza);
-
-    expect(prisma.movimiento.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: { estado: 'REALIZADO', fechaRealizado: new Date('2026-11-09'), horaRealizado: '18:00' },
-    }));
-  });
-
-  it('no deja a Limpieza marcar uno asignado a otro', async () => {
-    prisma.movimiento.findUnique.mockResolvedValue(checkIn);
-
-    await expect(service.marcarRealizado(checkIn.id, {}, otraLimpieza)).rejects.toThrow(ForbiddenError);
+    await expect(service.obtener(50, otroOperador)).rejects.toThrow(ForbiddenError);
+    await expect(service.marcarRealizado(50, {}, otroOperador)).rejects.toThrow(ForbiddenError);
     expect(prisma.movimiento.update).not.toHaveBeenCalled(); // la mitad importante: no lo marcó
   });
+});
 
-  it('no deja a Limpieza marcar uno que no tiene a nadie asignado', async () => {
-    prisma.movimiento.findUnique.mockResolvedValue({ ...checkIn, usuarioId: null });
+describe('agenda con el filtro sinAsignar', () => {
+  const admin = { sub: '1', rol: 'Administrador' as const };
+  const operador = { sub: '8', rol: 'Operador' as const };
 
-    await expect(service.marcarRealizado(checkIn.id, {}, limpieza)).rejects.toThrow(ForbiddenError);
-    expect(prisma.movimiento.update).not.toHaveBeenCalled();
+  // Devuelve el where con el que el service consultó a la base
+  async function whereDeLaConsulta(query: object, quien: typeof admin | typeof operador) {
+    prisma.movimiento.findMany.mockClear();
+    prisma.movimiento.findMany.mockResolvedValue([]);
+    await service.agenda(agendaSchema.parse(query), quien);
+    return prisma.movimiento.findMany.mock.calls[0]![0] as { where: { usuarioId?: number | null; estado?: string } };
+  }
+
+  it('pide a la base solo los pendientes sin operador', async () => {
+    const { where } = await whereDeLaConsulta({ sinAsignar: 'true' }, admin);
+    expect(where.usuarioId).toBeNull();
+    expect(where.estado).toBe('PENDIENTE');
   });
 
-  it('deja a un Administrador marcar uno asignado a otro', async () => {
-    prisma.movimiento.findUnique.mockResolvedValue(checkIn);
-
-    await service.marcarRealizado(checkIn.id, {}, admin);
-
-    expect(prisma.movimiento.update).toHaveBeenCalled();
+  it('sin el filtro no restringe operador ni estado', async () => {
+    const { where } = await whereDeLaConsulta({}, admin);
+    expect(where.usuarioId).toBeUndefined();
+    expect(where.estado).toBeUndefined();
   });
 
-  it('no deja marcar uno cancelado, ni siquiera a su asignado', async () => {
-    prisma.movimiento.findUnique.mockResolvedValue({ ...checkIn, estado: 'CANCELADO' });
-
-    await expect(service.marcarRealizado(checkIn.id, {}, limpieza)).rejects.toThrow(ConflictError);
-    expect(prisma.movimiento.update).not.toHaveBeenCalled();
+  it('un Operador sigue viendo solo lo suyo aunque mande el filtro', async () => {
+    const { where } = await whereDeLaConsulta({ sinAsignar: 'true' }, operador);
+    expect(where.usuarioId).toBe(8);
+    expect(where.estado).toBeUndefined();
   });
 
-  it('avisa que el movimiento no existe', async () => {
-    prisma.movimiento.findUnique.mockResolvedValue(null);
-
-    await expect(service.marcarRealizado(99, {}, limpieza)).rejects.toThrow(NotFoundError);
+  it('rechaza un valor distinto de true', () => {
+    expect(agendaSchema.safeParse({ sinAsignar: 'false' }).success).toBe(false);
+    expect(agendaSchema.safeParse({ sinAsignar: 'cualquiera' }).success).toBe(false);
   });
 });

@@ -36,8 +36,9 @@ interface ListingStays {
 
 // Las reservas que son huéspedes de verdad (blocked y maintenance son bloqueos del calendario)
 const TIPOS_CON_HUESPED = ['reserved', 'booked', 'contract'];
-// Stays solo devuelve las canceladas si se las pide explícitamente con type=canceled
-const FILTRO_TIPOS = [...TIPOS_CON_HUESPED, 'canceled'].map((tipo) => `&type=${tipo}`).join('');
+// Se piden los tres tipos con huésped y además las canceladas: Stays solo devuelve
+// las canceladas si se las pide explícitamente con type=canceled
+const FILTRO_TIPOS = '&type=reserved&type=booked&type=contract&type=canceled';
 const LIMITE_POR_PAGINA = 20; // el máximo que deja Stays
 
 // GET a la API de Stays con autenticación Basic: base64("client_id:client_secret")
@@ -66,8 +67,10 @@ export async function sincronizar(rango: SincronizarInput) {
   const huespedes = new Map<string, number>();
 
   // Stays devuelve de a 20: se pide la página siguiente hasta que venga una incompleta
-  for (let skip = 0; ; skip += LIMITE_POR_PAGINA) {
-    const pagina: ReservaStays[] = await getStays(
+  let skip = 0;
+  let pagina: ReservaStays[];
+  do {
+    pagina = await getStays(
       `/booking/reservations?from=${desde}&to=${hasta}&dateType=arrival&skip=${skip}&limit=${LIMITE_POR_PAGINA}${FILTRO_TIPOS}`,
     );
 
@@ -96,10 +99,8 @@ export async function sincronizar(rango: SincronizarInput) {
       resumen.reservas++;
     }
 
-    if (pagina.length < LIMITE_POR_PAGINA) {
-      break;
-    }
-  }
+    skip += LIMITE_POR_PAGINA;
+  } while (pagina.length === LIMITE_POR_PAGINA); // una página incompleta es la última
 
   return { desde, hasta, ...resumen };
 }
