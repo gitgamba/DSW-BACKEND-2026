@@ -4,6 +4,8 @@ API REST del sistema de gestión de la agenda de operadores de una empresa de ho
 
 Usa Node.js, Express 5, TypeScript, Zod, Prisma 6 y SQL Server (Azure SQL).
 
+[Documentación](docs/README.md) · [Preparar otra PC y ejecutar las pruebas](docs/desarrollo-y-pruebas.md) · [Despliegue en Render](#deploy-render)
+
 ## Requisitos
 
 - Node.js 24 (fijado en `engines` del `package.json`: Render usa esa misma versión)
@@ -11,11 +13,16 @@ Usa Node.js, Express 5, TypeScript, Zod, Prisma 6 y SQL Server (Azure SQL).
 
 ## Instalación
 
+Copiá `.env.example` a `.env` y completá los valores reales. El `.env` no se sube al repo.
+
+Desde la carpeta de este repositorio, instalar las versiones del lockfile y generar el cliente de Prisma:
+
 ```bash
-npm install
+npm ci
+npx prisma generate
 ```
 
-Copiá `.env.example` a `.env` y completá los valores reales. El `.env` no se sube al repo.
+La [guía de desarrollo y pruebas](docs/desarrollo-y-pruebas.md) detalla cómo comprobar Node, configurar Azure y preparar una PC nueva.
 
 | Variable | Para qué |
 |:-|:-|
@@ -30,7 +37,7 @@ La configuración se valida al arrancar: si falta algo, la API no levanta y avis
 
 ## Base de datos
 
-Aplicar las migraciones de `prisma/migrations/` y cargar los datos iniciales:
+En una **base nueva**, aplicar las migraciones de `prisma/migrations/` y cargar los datos iniciales:
 
 ```bash
 npx prisma migrate deploy
@@ -38,6 +45,8 @@ npx prisma db seed
 ```
 
 El seed crea los puestos Administrador, Supervisor y Limpieza (roles base Administrador, Supervisor y Operador, respectivamente) y el primer administrador. Se puede correr más de una vez: no duplica nada.
+
+Para usar la **base compartida del equipo desde otra PC**, conservar el esquema y los datos existentes: preparar el `.env`, generar el cliente de Prisma y habilitar la IP pública de esa conexión. No ejecutar migraciones ni seed como parte rutinaria de la preparación. Si hay una migración pendiente, revisar y coordinar su aplicación antes de continuar.
 
 ### Cambios en el modelo
 
@@ -93,10 +102,13 @@ Cada feature sigue el mismo recorrido: la **route** valida el body con Zod, el *
 
 Usamos Jest con ts-jest y supertest, configurados como en la guía 10 de la cátedra.
 
+Antes de ejecutar integración, seguir la [preparación del entorno y los tests](docs/desarrollo-y-pruebas.md). `npm test` también escribe y limpia fixtures en la base configurada.
+
 ```bash
-npm test                  # toda la suite
-npm test -- --verbose     # con el nombre de cada test
-npm test -- src/usuario   # solo los de una carpeta
+npm test -- --runInBand --testPathIgnorePatterns=src/app.test.ts  # solo unitarios, incluido seed con mocks
+npm test -- --runInBand                                        # toda la suite, incluida integración
+npm test -- --runInBand --verbose                              # con el nombre de cada test
+npm test -- src/usuario                                        # solo los de una carpeta
 ```
 
 Incluyen los dos unitarios originales y la integración del TP, más las reglas nuevas de roles y un seed idempotente.
@@ -114,7 +126,7 @@ Incluyen los dos unitarios originales y la integración del TP, más las reglas 
 
 > El proyecto usa TypeScript 6 y no 7 porque ts-jest todavía no soporta TypeScript 7, que ya no trae la API de JavaScript que ts-jest necesita.
 
-Resultado real del 30/10/2026 con Node 24.22.2: **5 suites y 7 casos aprobados**, incluida la integración contra Azure SQL. Ver [evidencia central](https://github.com/gitgamba/DSW-303-2026/blob/main/docs/tests.md).
+Resultado histórico del 30/10/2026 con Node 24.22.2: **5 suites y 7 casos aprobados**, incluida la integración contra Azure SQL. Una ejecución nueva debe registrar su propia [evidencia](docs/desarrollo-y-pruebas.md#evidencia-para-la-entrega).
 
 ## Deploy (Render)
 
@@ -317,6 +329,6 @@ Los cambios de esta sección están preparados localmente. Consultar el estado d
 - Antes de aplicar la migración de rolBase, ejecutar `node scripts/verificar-tipos-antes-de-migrar.mjs` y revisar el SQL. Si hay tipos desconocidos, acordar su mapeo; no asignarles permisos por defecto.
 - Aplicar con `npx prisma migrate deploy`, nunca migrate dev en Azure. La migración conserva IDs, puestos, usuarios y relaciones.
 - La protección del último administrador también controla cambios de rol de todo un tipo.
-- Tests: `npm test -- --runInBand`; solo unitarios: `npm test -- --runInBand --testPathPatterns=service.test`. La integración escribe y limpia únicamente sus fixtures PRUEBA-TEST y prueba_limpieza.
+- Tests: `npm test -- --runInBand`; solo unitarios, incluido seed con mocks: `npm test -- --runInBand --testPathIgnorePatterns=src/app.test.ts`. La integración escribe y limpia únicamente sus fixtures PRUEBA-TEST y prueba_limpieza.
 - No se ejecuta nuevamente el seed en producción por este cambio. En instalaciones nuevas crea Administrador, Supervisor y Limpieza con sus roles correspondientes; no pisa contraseñas existentes.
-- [Documentación de este repositorio](docs/README.md) y [documentación central](https://github.com/gitgamba/DSW-303-2026/tree/main/docs). La versión local central está en el repo hermano DSW-303-2026.
+- [Documentación de este repositorio](docs/README.md) y [repositorio central de la propuesta y la entrega](https://github.com/gitgamba/DSW-303-2026). Confirmar por separado la publicación de la documentación académica complementaria.

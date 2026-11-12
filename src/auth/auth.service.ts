@@ -15,6 +15,7 @@ export async function login(datos: LoginInput) {
   if (!usuario || !(await bcrypt.compare(datos.password, usuario.passwordHash))) {
     throw new UnauthorizedError('Credenciales inválidas');
   }
+  //ToDO: ver el as rol y hacerlo de otra manera.
 
   const token = emitirToken({ sub: String(usuario.id), rol: usuario.tipoUsuario.rolBase as Rol });
   const { passwordHash, ...usuarioSinHash } = usuario; // el hash no sale nunca
